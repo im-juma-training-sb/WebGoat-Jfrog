@@ -1,12 +1,11 @@
 name: Build and Publish WebGoat
-# This workflow builds the WebGoat project, scans it with JFrog Xray, and publishes the Docker image to Docker Hub.
+# This workflow builds the WebGoat project, scans artifacts with JFrog Xray, and publishes the Docker image to Docker Hub.
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  # Removed release trigger
 
 jobs:
   build:
@@ -67,19 +66,39 @@ jobs:
           type=sha,format=short
           type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           
+    # For debugging purposes, let's see what tags are generated
+    - name: Debug Docker tags
+      run: |
+        echo "Generated tags: ${{ steps.meta.outputs.tags }}"
+          
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
+      id: docker_build
       with:
         context: .
         push: ${{ github.ref == 'refs/heads/main' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        # Load the image locally for testing if not pushing
+        load: ${{ github.ref != 'refs/heads/main' }}
         
-    - name: Scan Docker image with JFrog Xray
+    # Debug step to list available Docker images
+    - name: List Docker images
+      run: docker images
+        
+    # Only run Docker scan on main branch and use specific image tag
+    - name: Scan Docker image with JFrog Xray (Main branch only)
       if: github.ref == 'refs/heads/main'
       run: |
-        # Scan the Docker image that was just pushed
-        IMAGE_NAME=$(echo ${{ steps.meta.outputs.tags }} | cut -d' ' -f1)
+        # Get the full Docker image name with tag
+        DOCKER_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+        IMAGE_NAME="${DOCKER_USERNAME}/webgoat:latest"
+        echo "Scanning Docker image: ${IMAGE_NAME}"
+        
+        # Pull the image to make sure it's available locally
+        docker pull ${IMAGE_NAME}
+        
+        # Scan the Docker image
         jf docker scan ${IMAGE_NAME} --fail=false
       env:
         JF_URL: ${{ secrets.JF_URL }}
