@@ -71,17 +71,31 @@ jobs:
           
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
+      id: docker_build
       with:
         context: .
         push: ${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         
-    - name: Scan Docker image with JFrog Xray
-      if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    # Build local image for scanning if not pushed
+    - name: Build local Docker image for scanning
+      if: github.event_name != 'release' && github.ref != 'refs/heads/main'
       run: |
-        # Scan the Docker image that was just pushed
-        IMAGE_NAME=$(echo ${{ steps.meta.outputs.tags }} | cut -d' ' -f1)
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:local .
+        
+    - name: Scan Docker image with JFrog Xray
+      run: |
+        # Determine which image to scan
+        if [[ "${{ github.event_name }}" == "release" || "${{ github.ref }}" == "refs/heads/main" ]]; then
+          # Use the first tag from the pushed image
+          IMAGE_NAME=$(echo ${{ steps.meta.outputs.tags }} | cut -d' ' -f1)
+        else
+          # Use the local image we just built
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/webgoat:local"
+        fi
+        
+        echo "Scanning image: ${IMAGE_NAME}"
         jf docker scan ${IMAGE_NAME} --fail=false
       env:
         JF_URL: ${{ secrets.JF_URL }}
