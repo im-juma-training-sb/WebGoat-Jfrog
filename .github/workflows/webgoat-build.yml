@@ -46,9 +46,18 @@ jobs:
         JF_URL: ${{ secrets.JF_URL }}
         JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
       
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-      
+    # Build and push Docker image using Docker commands directly
+    - name: Build Docker image
+      run: |
+        # Build the Docker image
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:latest .
+        docker tag ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:latest ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:sha-${{ github.sha }}
+        
+        # List built images
+        echo "Built Docker images:"
+        docker images | grep webgoat
+    
+    # Push to Docker Hub if on main branch
     - name: Login to Docker Hub
       if: github.ref == 'refs/heads/main'
       uses: docker/login-action@v2
@@ -56,47 +65,19 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
         
-    - name: Extract metadata for Docker
-      id: meta
-      uses: docker/metadata-action@v4
-      with:
-        images: ${{ secrets.DOCKERHUB_USERNAME }}/webgoat
-        tags: |
-          type=ref,event=branch
-          type=sha,format=short
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-          
-    # For debugging purposes, let's see what tags are generated
-    - name: Debug Docker tags
-      run: |
-        echo "Generated tags: ${{ steps.meta.outputs.tags }}"
-          
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v4
-      id: docker_build
-      with:
-        context: .
-        push: ${{ github.ref == 'refs/heads/main' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        # Load the image locally for testing if not pushing
-        load: ${{ github.ref != 'refs/heads/main' }}
-        
-    # Debug step to list available Docker images
-    - name: List Docker images
-      run: docker images
-        
-    # Only run Docker scan on main branch and use specific image tag
-    - name: Scan Docker image with JFrog Xray (Main branch only)
+    - name: Push Docker image
       if: github.ref == 'refs/heads/main'
       run: |
-        # Get the full Docker image name with tag
-        DOCKER_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
-        IMAGE_NAME="${DOCKER_USERNAME}/webgoat:latest"
-        echo "Scanning Docker image: ${IMAGE_NAME}"
+        # Push the Docker image to Docker Hub
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:latest
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:sha-${{ github.sha }}
         
-        # Pull the image to make sure it's available locally
-        docker pull ${IMAGE_NAME}
+    # Scan the Docker image after building
+    - name: Scan Docker image with JFrog Xray
+      run: |
+        # Get the full Docker image name with tag
+        IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/webgoat:latest"
+        echo "Scanning Docker image: ${IMAGE_NAME}"
         
         # Scan the Docker image
         jf docker scan ${IMAGE_NAME} --fail=false
