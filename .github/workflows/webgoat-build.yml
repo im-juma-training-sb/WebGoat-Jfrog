@@ -116,9 +116,9 @@ jobs:
         JF_URL: ${{ secrets.JF_URL }}
         JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
         
-    # Upload SBOMs as artifacts
+    # Upload SBOMs as artifacts - using v4 instead of deprecated v3
     - name: Upload SBOMs as artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sbom-files
         path: sbom/
