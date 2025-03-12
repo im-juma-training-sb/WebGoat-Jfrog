@@ -34,14 +34,30 @@ jobs:
       env:
         JF_URL: ${{ secrets.JF_URL }}
         JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+    
+    # Generate SBOM for Maven artifacts
+    - name: Generate SBOM for Maven project
+      run: |
+        # Install the CycloneDX Maven plugin if not already in pom.xml
+        mvn org.cyclonedx:cyclonedx-maven-plugin:2.7.9:makeAggregateBom -DoutputFormat=json -DoutputName=bom
         
-    - name: JFrog Xray Scan
+        # Move the SBOM to a more accessible location
+        mkdir -p sbom
+        mv target/bom.json sbom/maven-bom.json
+        
+        # Print SBOM info
+        echo "Generated Maven SBOM at sbom/maven-bom.json"
+        
+    - name: JFrog Xray Scan with SBOM
       run: |
         # Configure JFrog CLI
         jf c add xray-server --url=${JF_URL} --access-token=${JF_ACCESS_TOKEN}
         
-        # Scan the project artifacts without specifying a project
+        # Scan the project artifacts
         jf scan target/*.jar --fail=false
+        
+        # Scan the SBOM
+        jf scan sbom/maven-bom.json --format cyclonedx --fail=false
       env:
         JF_URL: ${{ secrets.JF_URL }}
         JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
@@ -56,6 +72,18 @@ jobs:
         # List built images
         echo "Built Docker images:"
         docker images | grep webgoat
+    
+    # Generate SBOM for Docker image
+    - name: Generate SBOM for Docker image
+      run: |
+        # Install Syft (SBOM generator for containers)
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        
+        # Generate SBOM in CycloneDX format
+        syft ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:latest -o cyclonedx-json=sbom/docker-bom.json
+        
+        # Print SBOM info
+        echo "Generated Docker SBOM at sbom/docker-bom.json"
     
     # Push to Docker Hub if on main branch
     - name: Login to Docker Hub
@@ -72,7 +100,7 @@ jobs:
         docker push ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:latest
         docker push ${{ secrets.DOCKERHUB_USERNAME }}/webgoat:sha-${{ github.sha }}
         
-    # Scan the Docker image after building
+    # Scan the Docker image and its SBOM after building
     - name: Scan Docker image with JFrog Xray
       run: |
         # Get the full Docker image name with tag
@@ -81,6 +109,17 @@ jobs:
         
         # Scan the Docker image
         jf docker scan ${IMAGE_NAME} --fail=false
+        
+        # Scan the Docker SBOM
+        jf scan sbom/docker-bom.json --format cyclonedx --fail=false
       env:
         JF_URL: ${{ secrets.JF_URL }}
         JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+        
+    # Upload SBOMs as artifacts
+    - name: Upload SBOMs as artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom-files
+        path: sbom/
+        retention-days: 5
