@@ -28,7 +28,7 @@ jobs:
       run: mvn -B clean install -Dmaven.compiler.release=17
       
     - name: Set up JFrog CLI
-      uses: jfrog/setup-jfrog-cli@v3
+      uses: jfrog/setup-jfrog-cli@v4
       with:
         version: latest
       env:
